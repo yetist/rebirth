@@ -12,3 +12,10 @@ linux /vmlinuz
 initrd /initrd.img
 cmdline root=/dev/sda ...
 ```
+
+## Build
+
+```
+meson setup _build
+ninja -C _build rebirth
+```
