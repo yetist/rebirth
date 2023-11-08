@@ -2700,6 +2700,7 @@ static EFI_STATUS run(EFI_HANDLE image) {
         if (config.n_entries == 0) {
 	    log_error("The \\rebirth.conf configuration file was not found or is invalid.");
 	    log_error("=> Restarting the system...");
+	    log_wait();
 	    reboot_system();
 	}
 
