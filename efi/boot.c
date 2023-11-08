@@ -25,15 +25,15 @@
 #include "vmm.h"
 
 /* Magic string for recognizing our own binaries */
-#define SD_MAGIC "#### LoaderInfo: systemd-boot " VERSION " ####"
+#define SD_MAGIC "#### LoaderInfo: rebirth " VERSION " ####"
 DECLARE_NOALLOC_SECTION(".sdmagic", SD_MAGIC);
 
-/* Makes systemd-boot available from \EFI\Linux\ for testing purposes. */
+/* Makes rebirth available from \EFI\Linux\ for testing purposes. */
 DECLARE_NOALLOC_SECTION(
                 ".osrel",
-                "ID=systemd-boot\n"
+                "ID=rebirth\n"
                 "VERSION=\"" VERSION "\"\n"
-                "NAME=\"systemd-boot " VERSION "\"\n");
+                "NAME=\"rebirth " VERSION "\"\n");
 
 DECLARE_SBAT(SBAT_BOOT_SECTION_TEXT);
 
@@ -456,7 +456,7 @@ static void print_status(Config *config, char16_t *loaded_image_path) {
         secure = secure_boot_mode();
         (void) efivar_get(MAKE_GUID_PTR(LOADER), u"LoaderDevicePartUUID", &device_part_uuid);
 
-        printf("  systemd-boot version: " VERSION "\n");
+        printf("  rebirth version: " VERSION "\n");
         if (loaded_image_path)
                 printf("          loaded image: %ls\n", loaded_image_path);
         if (device_part_uuid)
@@ -969,7 +969,7 @@ static bool menu_run(
 
                 case KEYPRESS(0, 0, 'v'):
                         status = xasprintf(
-                                        "systemd-boot " VERSION " (" EFI_MACHINE_TYPE_NAME "), "
+                                        "rebirth " VERSION " (" EFI_MACHINE_TYPE_NAME "), "
                                         "UEFI Specification %u.%02u, Vendor %ls %u.%02u",
                                         ST->Hdr.Revision >> 16,
                                         ST->Hdr.Revision & 0xffff,
@@ -2555,7 +2555,7 @@ static void export_variables(
         assert(loaded_image);
 
         efivar_set_time_usec(MAKE_GUID_PTR(LOADER), u"LoaderTimeInitUSec", init_usec);
-        efivar_set(MAKE_GUID_PTR(LOADER), u"LoaderInfo", u"systemd-boot " VERSION, 0);
+        efivar_set(MAKE_GUID_PTR(LOADER), u"LoaderInfo", u"rebirth " VERSION, 0);
 
         infostr = xasprintf("%ls %u.%02u", ST->FirmwareVendor, ST->FirmwareRevision >> 16, ST->FirmwareRevision & 0xffff);
         efivar_set(MAKE_GUID_PTR(LOADER), u"LoaderFirmwareInfo", infostr, 0);
