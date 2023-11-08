@@ -7,4 +7,4 @@
  * - where a simplified machine-parsable form is more useful, for example
  *   pkgconfig files and version information written to binary files.
  */
-#define GIT_VERSION "2.3"
+#define VERSION "1.0"

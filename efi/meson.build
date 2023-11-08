@@ -23,6 +23,8 @@ efi_fuzz_template = efitest_base
 
 efi_conf = configuration_data()
 efi_conf.set10('ENABLE_TPM', true)
+efi_conf.set10('EFI_DEBUG', get_option('debug'))
+efi_conf.set10('EFI_MENU', get_option('menu'))
 
 foreach ctype : ['color-normal', 'color-entry', 'color-highlight', 'color-edit']
         c = get_option('efi-' + ctype).split(',')
@@ -31,57 +33,8 @@ foreach ctype : ['color-normal', 'color-entry', 'color-highlight', 'color-edit']
                 'EFI_' + c[1].strip().underscorify().to_upper()))
 endforeach
 
-#if meson.is_cross_build() and get_option('sbat-distro') == 'auto'
-#        warning('Auto detection of SBAT information not supported when cross-building, disabling SBAT.')
-#elif get_option('sbat-distro') != ''
-#        efi_conf.set_quoted('SBAT_PROJECT', meson.project_name())
-#        efi_conf.set_quoted('PROJECT_VERSION', meson.project_version())
-#        efi_conf.set('PROJECT_URL', conf.get('PROJECT_URL'))
-#        if get_option('sbat-distro-generation') < 1
-#                error('SBAT Distro Generation must be a positive integer')
-#        endif
-#        efi_conf.set('SBAT_DISTRO_GENERATION', get_option('sbat-distro-generation'))
-#        foreach sbatvar : [['sbat-distro', 'ID'],
-#                           ['sbat-distro-summary', 'NAME'],
-#                           ['sbat-distro-url', 'BUG_REPORT_URL']]
-#                value = get_option(sbatvar[0])
-#                if (value == '' or value == 'auto') and not meson.is_cross_build()
-#                        cmd = 'if [ -e /etc/os-release ]; then . /etc/os-release; else . /usr/lib/os-release; fi; echo $@0@'.format(sbatvar[1])
-#                        value = run_command(sh, '-c', cmd, check: true).stdout().strip()
-#                endif
-#                if value == ''
-#                        error('Required @0@ option not set and autodetection failed'.format(sbatvar[0]))
-#                endif
-#                efi_conf.set_quoted(sbatvar[0].underscorify().to_upper(), value)
-#        endforeach
-#
-#        pkgname = get_option('sbat-distro-pkgname')
-#        if pkgname == ''
-#                pkgname = meson.project_name()
-#        endif
-#        efi_conf.set_quoted('SBAT_DISTRO_PKGNAME', pkgname)
-#
-#        pkgver = get_option('sbat-distro-version')
-#        if pkgver == ''
-#                # This is determined during build, not configuration, so we can't display it yet.
-#                efi_conf.set('SBAT_DISTRO_VERSION', 'GIT_VERSION')
-#        else
-#                efi_conf.set_quoted('SBAT_DISTRO_VERSION', pkgver)
-#        endif
-#endif
-
 summary({'UEFI architectures' : efi_arch + (efi_arch_alt == '' ? '' : ', ' + efi_arch_alt)},
         section : 'UEFI')
-
-#if efi_conf.get('SBAT_DISTRO', '') != ''
-#        summary({
-#                'SBAT distro':              efi_conf.get('SBAT_DISTRO'),
-#                'SBAT distro generation':   efi_conf.get('SBAT_DISTRO_GENERATION'),
-#                'SBAT distro version':      efi_conf.get('SBAT_DISTRO_VERSION'),
-#                'SBAT distro summary':      efi_conf.get('SBAT_DISTRO_SUMMARY'),
-#                'SBAT distro URL':          efi_conf.get('SBAT_DISTRO_URL')},
-#                section : 'UEFI')
-#endif
 
 configure_file(
         output : 'efi_config.h',
@@ -108,11 +61,6 @@ efi_c_args += cc.get_supported_arguments(
         '-mstack-protector-guard=global',
 )
 
-# Debug information has little value in release builds as no normal human being knows
-# how to attach a debugger to EFI binaries running on real hardware. Anyone who does
-# certainly has the means to do their own dev build.
-efi_c_args += '-DEFI_DEBUG'
-
 efi_c_ld_args = [
         '-lgcc',
         '-nostdlib',
@@ -120,13 +68,6 @@ efi_c_ld_args = [
         '-Wl,--entry=efi_main',
         '-Wl,--fatal-warnings',
 
-        # These flags should be passed by -static-pie, but for whatever reason the flag translation
-        # is not enabled on all architectures. Not passing `-static` would just allow the linker to
-        # use dynamic libraries, (which we can't/don't use anyway). But if `-pie` is missing and the
-        # gcc build does not default to `-pie` we get a regular (no-pie) binary that will be
-        # rightfully rejected by elf2efi. Note that meson also passes `-pie` to the linker driver,
-        # but it is overridden by our `-static-pie`. We also need to pass these directly to the
-        # linker as `-static`+`-pie` seem to get translated differently.
         '-Wl,-static,-pie,--no-dynamic-linker,-z,text',
 
         # EFI has 4KiB pages.
@@ -285,7 +226,7 @@ foreach archspec : efi_archspecs
         }
 
         efi_elf_binaries += executable(
-                'systemd-boot' + archspec['arch'],
+                'rebirth' + archspec['arch'],
                 sources : [systemd_boot_sources],
                 link_with : libefi,
                 name_suffix : 'elf',
@@ -294,7 +235,7 @@ endforeach
 
 foreach efi_elf_binary : efi_elf_binaries
         name = efi_elf_binary.name()
-        name += name.startswith('systemd-boot') ? '.efi' : '.efi.stub'
+        name += name.startswith('rebirth') ? '.efi' : '.efi.stub'
         # For the addon, given it's empty, we need to explicitly reserve space in the header to account for
         # the sections that ukify will add.
         minimum_sections = name.endswith('.stub') ? '15' : '0'
@@ -302,7 +243,7 @@ foreach efi_elf_binary : efi_elf_binaries
                 name,
                 output : name,
                 input : efi_elf_binary,
-                install_tag : 'systemd-boot',
+                install_tag : 'rebirth',
                 command : [
                         elf2efi_py,
                         '--version-major=' + meson.project_version(),
@@ -318,4 +259,4 @@ foreach efi_elf_binary : efi_elf_binaries
         boot_targets += exe
 endforeach
 
-alias_target('systemd-boot', boot_targets)
+alias_target('rebirth', boot_targets)

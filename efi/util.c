@@ -571,7 +571,7 @@ uint64_t get_os_indications_supported(void) {
 
 __attribute__((noinline)) void notify_debugger(const char *identity, volatile bool wait) {
 #ifdef EFI_DEBUG
-        printf("%s@%p %s\n", identity, __executable_start, GIT_VERSION);
+        printf("%s@%p %s\n", identity, __executable_start, VERSION);
         if (wait)
                 printf("Waiting for debugger to attach...\n");
 

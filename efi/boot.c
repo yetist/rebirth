@@ -25,15 +25,15 @@
 #include "vmm.h"
 
 /* Magic string for recognizing our own binaries */
-#define SD_MAGIC "#### LoaderInfo: systemd-boot " GIT_VERSION " ####"
+#define SD_MAGIC "#### LoaderInfo: systemd-boot " VERSION " ####"
 DECLARE_NOALLOC_SECTION(".sdmagic", SD_MAGIC);
 
 /* Makes systemd-boot available from \EFI\Linux\ for testing purposes. */
 DECLARE_NOALLOC_SECTION(
                 ".osrel",
                 "ID=systemd-boot\n"
-                "VERSION=\"" GIT_VERSION "\"\n"
-                "NAME=\"systemd-boot " GIT_VERSION "\"\n");
+                "VERSION=\"" VERSION "\"\n"
+                "NAME=\"systemd-boot " VERSION "\"\n");
 
 DECLARE_SBAT(SBAT_BOOT_SECTION_TEXT);
 
@@ -456,7 +456,7 @@ static void print_status(Config *config, char16_t *loaded_image_path) {
         secure = secure_boot_mode();
         (void) efivar_get(MAKE_GUID_PTR(LOADER), u"LoaderDevicePartUUID", &device_part_uuid);
 
-        printf("  systemd-boot version: " GIT_VERSION "\n");
+        printf("  systemd-boot version: " VERSION "\n");
         if (loaded_image_path)
                 printf("          loaded image: %ls\n", loaded_image_path);
         if (device_part_uuid)
@@ -969,7 +969,7 @@ static bool menu_run(
 
                 case KEYPRESS(0, 0, 'v'):
                         status = xasprintf(
-                                        "systemd-boot " GIT_VERSION " (" EFI_MACHINE_TYPE_NAME "), "
+                                        "systemd-boot " VERSION " (" EFI_MACHINE_TYPE_NAME "), "
                                         "UEFI Specification %u.%02u, Vendor %ls %u.%02u",
                                         ST->Hdr.Revision >> 16,
                                         ST->Hdr.Revision & 0xffff,
@@ -1635,6 +1635,8 @@ static void config_load_rebirth(Config *config, EFI_HANDLE *device, EFI_FILE *ro
   };
 
   err = file_read(root_dir, u"\\rebirth.conf", 0, 0, &content, &content_size);
+  if (err != EFI_SUCCESS)
+    return;
 
   while ((line = line_get_key_value(content, " \t", &pos, &key, &value))) {
       if (streq8(key, "title")) {
@@ -1682,8 +1684,10 @@ static void config_load_rebirth(Config *config, EFI_HANDLE *device, EFI_FILE *ro
   /* check existence */
   _cleanup_(file_closep) EFI_FILE *handle = NULL;
   err = root_dir->Open(root_dir, &handle, entry->loader, EFI_FILE_MODE_READ, 0ULL);
-  if (err != EFI_SUCCESS)
-    return;
+  if (err != EFI_SUCCESS) {
+      log_error("File does not exists: %ls", entry->loader);
+      return;
+  }
 
   entry->device = device;
   config_add_entry(config, entry);
@@ -2551,7 +2555,7 @@ static void export_variables(
         assert(loaded_image);
 
         efivar_set_time_usec(MAKE_GUID_PTR(LOADER), u"LoaderTimeInitUSec", init_usec);
-        efivar_set(MAKE_GUID_PTR(LOADER), u"LoaderInfo", u"systemd-boot " GIT_VERSION, 0);
+        efivar_set(MAKE_GUID_PTR(LOADER), u"LoaderInfo", u"systemd-boot " VERSION, 0);
 
         infostr = xasprintf("%ls %u.%02u", ST->FirmwareVendor, ST->FirmwareRevision >> 16, ST->FirmwareRevision & 0xffff);
         efivar_set(MAKE_GUID_PTR(LOADER), u"LoaderFirmwareInfo", infostr, 0);
@@ -2580,62 +2584,62 @@ static void config_load_all_entries(
         assert(loaded_image);
         assert(root_dir);
 
-        config_load_defaults(config, root_dir);
-
-        /* scan /EFI/Linux/ directory */
-        config_entry_add_unified(config, loaded_image->DeviceHandle, root_dir);
-
-        /* scan /loader/entries/\*.conf files */
-        config_load_entries(config, loaded_image->DeviceHandle, root_dir, loaded_image_path);
+//        config_load_defaults(config, root_dir);
+//
+//        /* scan /EFI/Linux/ directory */
+//        config_entry_add_unified(config, loaded_image->DeviceHandle, root_dir);
+//
+//        /* scan /loader/entries/\*.conf files */
+//        config_load_entries(config, loaded_image->DeviceHandle, root_dir, loaded_image_path);
         config_load_rebirth(config, loaded_image->DeviceHandle, root_dir);
 
         /* Similar, but on any XBOOTLDR partition */
-        config_load_xbootldr(config, loaded_image->DeviceHandle);
+//        config_load_xbootldr(config, loaded_image->DeviceHandle);
 
         /* sort entries after version number */
-        sort_pointer_array((void **) config->entries, config->n_entries, (compare_pointer_func_t) config_entry_compare);
-
-        //config_entry_add_windows(config, loaded_image->DeviceHandle, root_dir);
-        config_entry_add_loader_auto(config, loaded_image->DeviceHandle, root_dir, NULL,
-                                     u"auto-efi-shell", 's', u"EFI Shell", u"\\shell" EFI_MACHINE_TYPE_NAME ".efi");
-        config_entry_add_loader_auto(config, loaded_image->DeviceHandle, root_dir, loaded_image_path,
-                                     u"auto-efi-default", '\0', u"EFI Default Loader", NULL);
-
-        if (config->auto_firmware && FLAGS_SET(get_os_indications_supported(), EFI_OS_INDICATIONS_BOOT_TO_FW_UI)) {
-                ConfigEntry *entry = xnew(ConfigEntry, 1);
-                *entry = (ConfigEntry) {
-                        .id = xstrdup16(u"auto-reboot-to-firmware-setup"),
-                        .title = xstrdup16(u"Reboot Into Firmware Interface"),
-                        .call = reboot_into_firmware,
-                        .tries_done = -1,
-                        .tries_left = -1,
-                };
-                config_add_entry(config, entry);
-        }
-
-        if (config->auto_poweroff) {
-                ConfigEntry *entry = xnew(ConfigEntry, 1);
-                *entry = (ConfigEntry) {
-                        .id = xstrdup16(u"auto-poweroff"),
-                        .title = xstrdup16(u"Power Off The System"),
-                        .call = poweroff_system,
-                        .tries_done = -1,
-                        .tries_left = -1,
-                };
-                config_add_entry(config, entry);
-        }
-
-        if (config->auto_reboot) {
-                ConfigEntry *entry = xnew(ConfigEntry, 1);
-                *entry = (ConfigEntry) {
-                        .id = xstrdup16(u"auto-reboot"),
-                        .title = xstrdup16(u"Reboot The System"),
-                        .call = reboot_system,
-                        .tries_done = -1,
-                        .tries_left = -1,
-                };
-                config_add_entry(config, entry);
-        }
+//        sort_pointer_array((void **) config->entries, config->n_entries, (compare_pointer_func_t) config_entry_compare);
+//
+//        //config_entry_add_windows(config, loaded_image->DeviceHandle, root_dir);
+//        config_entry_add_loader_auto(config, loaded_image->DeviceHandle, root_dir, NULL,
+//                                     u"auto-efi-shell", 's', u"EFI Shell", u"\\shell" EFI_MACHINE_TYPE_NAME ".efi");
+//        config_entry_add_loader_auto(config, loaded_image->DeviceHandle, root_dir, loaded_image_path,
+//                                     u"auto-efi-default", '\0', u"EFI Default Loader", NULL);
+//
+//        if (config->auto_firmware && FLAGS_SET(get_os_indications_supported(), EFI_OS_INDICATIONS_BOOT_TO_FW_UI)) {
+//                ConfigEntry *entry = xnew(ConfigEntry, 1);
+//                *entry = (ConfigEntry) {
+//                        .id = xstrdup16(u"auto-reboot-to-firmware-setup"),
+//                        .title = xstrdup16(u"Reboot Into Firmware Interface"),
+//                        .call = reboot_into_firmware,
+//                        .tries_done = -1,
+//                        .tries_left = -1,
+//                };
+//                config_add_entry(config, entry);
+//        }
+//
+//        if (config->auto_poweroff) {
+//                ConfigEntry *entry = xnew(ConfigEntry, 1);
+//                *entry = (ConfigEntry) {
+//                        .id = xstrdup16(u"auto-poweroff"),
+//                        .title = xstrdup16(u"Power Off The System"),
+//                        .call = poweroff_system,
+//                        .tries_done = -1,
+//                        .tries_left = -1,
+//                };
+//                config_add_entry(config, entry);
+//        }
+//
+//        if (config->auto_reboot) {
+//                ConfigEntry *entry = xnew(ConfigEntry, 1);
+//                *entry = (ConfigEntry) {
+//                        .id = xstrdup16(u"auto-reboot"),
+//                        .title = xstrdup16(u"Reboot The System"),
+//                        .call = reboot_system,
+//                        .tries_done = -1,
+//                        .tries_left = -1,
+//                };
+//                config_add_entry(config, entry);
+//        }
 
         /* find if secure boot signing keys exist and autoload them if necessary
         otherwise creates menu entries so that the user can load them manually
@@ -2693,10 +2697,12 @@ static EFI_STATUS run(EFI_HANDLE image) {
 
         config_load_all_entries(&config, loaded_image, loaded_image_path, root_dir);
 
-        if (config.n_entries == 0)
-                return log_error_status(
-                                EFI_NOT_FOUND,
-                                "No config file found. Configuration files in \\rebirth.conf are needed.");
+        if (config.n_entries == 0) {
+	    log_error("The \\rebirth.conf configuration file was not found or is invalid.");
+	    log_error("=> Restarting the system...");
+	    reboot_system();
+	}
+
         for (;;) {
                 ConfigEntry *entry;
 
@@ -2737,4 +2743,4 @@ static EFI_STATUS run(EFI_HANDLE image) {
         }
 }
 
-DEFINE_EFI_MAIN_FUNCTION(run, "systemd-boot", /*wait_for_debugger=*/false);
+DEFINE_EFI_MAIN_FUNCTION(run, "rebirth", /*wait_for_debugger=*/false);
