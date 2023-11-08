@@ -420,6 +420,7 @@ static char16_t *update_timeout_efivar(uint32_t *t, bool inc) {
         }
 }
 
+#if 0
 static bool unicode_supported(void) {
         static int cache = -1;
 
@@ -602,6 +603,7 @@ static void print_status(Config *config, char16_t *loaded_image_path) {
                         return;
         }
 }
+#endif
 
 static EFI_STATUS reboot_into_firmware(void) {
         uint64_t osind = 0;
@@ -631,6 +633,7 @@ static EFI_STATUS reboot_system(void) {
         assert_not_reached();
 }
 
+#if 0
 static bool menu_run(
                 Config *config,
                 ConfigEntry **chosen_entry,
@@ -1095,6 +1098,7 @@ static bool menu_run(
         clear_screen(COLOR_NORMAL);
         return run;
 }
+#endif
 
 static void config_add_entry(Config *config, ConfigEntry *entry) {
         assert(config);
@@ -1607,37 +1611,82 @@ static EFI_STATUS efivar_get_timeout(const char16_t *var, uint32_t *ret_value) {
         return EFI_SUCCESS;
 }
 
-#if 0
+#if 1
 static void config_load_rebirth(Config *config, EFI_HANDLE *device, EFI_FILE *root_dir)
 {
   ConfigEntry *entry;
-  entry = xnew(ConfigEntry, 1);
-
-  (config, loaded_image->DeviceHandle, root_dir, loaded_image_path);
-
-  _cleanup_(file_closep) EFI_FILE *root_dir = NULL;
-  EFI_HANDLE new_device = NULL;  /* avoid false maybe-uninitialized warning */
   EFI_STATUS err;
+  _cleanup_free_ char *content = NULL;
+  size_t content_size; /* avoid false maybe-uninitialized warning */
+  char *line;
+  size_t pos = 0, n_initrd = 0;
+  char *key, *value;
 
   assert(config);
   assert(device);
+  assert(root_dir);
 
-        err = partition_open(MAKE_GUID_PTR(XBOOTLDR), device, &new_device, &root_dir);
-        if (err != EFI_SUCCESS)
-                return;
+  entry = xnew(ConfigEntry, 1);
 
-        config_entry_add_unified(config, new_device, root_dir);
-        config_load_entries(config, new_device, root_dir, NULL);
+  *entry = (ConfigEntry) {
+      .id = xstrdup16(u"rebirth"),
+      .tries_done = -1,
+      .tries_left = -1,
+  };
 
-        _cleanup_free_ char *content = NULL;
-        size_t content_size, value = 0;  /* avoid false maybe-uninitialized warning */
-        EFI_STATUS err;
+  err = file_read(root_dir, u"\\rebirth.conf", 0, 0, &content, &content_size);
 
-        assert(root_dir);
-        err = file_read(root_dir, u"\\rebirth.conf", 0, 0, &content, &content_size);
-	config_entry_add_type1(config, device, root_dir, u"\\loader\\entries", f->FileName, content, loaded_image_path);
+  while ((line = line_get_key_value(content, " \t", &pos, &key, &value))) {
+      if (streq8(key, "title")) {
+          free(entry->title);
+          entry->title = xstr8_to_16(value);
+          continue;
+      }
 
-	config_add_entry(config, entry);
+      if (streq8(key, "linux")) {
+          free(entry->loader);
+          entry->type = LOADER_LINUX;
+          entry->loader = xstr8_to_path(value);
+          entry->key = 'l';
+          continue;
+      }
+
+      if (streq8(key, "initrd")) {
+          entry->initrd = xrealloc(
+                                   entry->initrd,
+                                   n_initrd == 0 ? 0 : (n_initrd + 1) * sizeof(uint16_t *),
+                                   (n_initrd + 2) * sizeof(uint16_t *));
+          entry->initrd[n_initrd++] = xstr8_to_path(value);
+          entry->initrd[n_initrd] = NULL;
+          continue;
+      }
+
+      if (streq8(key, "cmdline")) {
+          _cleanup_free_ char16_t *new = NULL;
+
+          new = xstr8_to_16(value);
+          if (entry->options) {
+              char16_t *s = xasprintf("%ls %ls", entry->options, new);
+              free(entry->options);
+              entry->options = s;
+          } else
+            entry->options = TAKE_PTR(new);
+
+          continue;
+      }
+  }
+
+  if (entry->type == LOADER_UNDEFINED)
+    return;
+
+  /* check existence */
+  _cleanup_(file_closep) EFI_FILE *handle = NULL;
+  err = root_dir->Open(root_dir, &handle, entry->loader, EFI_FILE_MODE_READ, 0ULL);
+  if (err != EFI_SUCCESS)
+    return;
+
+  entry->device = device;
+  config_add_entry(config, entry);
 }
 #endif
 
@@ -2538,7 +2587,7 @@ static void config_load_all_entries(
 
         /* scan /loader/entries/\*.conf files */
         config_load_entries(config, loaded_image->DeviceHandle, root_dir, loaded_image_path);
-        config_load_rebirth(config, loaded_image->DeviceHandle, root_dir, loaded_image_path);
+        config_load_rebirth(config, loaded_image->DeviceHandle, root_dir);
 
         /* Similar, but on any XBOOTLDR partition */
         config_load_xbootldr(config, loaded_image->DeviceHandle);
@@ -2620,7 +2669,6 @@ static EFI_STATUS run(EFI_HANDLE image) {
         _cleanup_free_ char16_t *loaded_image_path = NULL;
         EFI_STATUS err;
         uint64_t init_usec;
-        bool menu = false;
 
         init_usec = time_usec();
 
@@ -2678,7 +2726,6 @@ static EFI_STATUS run(EFI_HANDLE image) {
                 if (err != EFI_SUCCESS)
                         return err;
 
-                menu = true;
                 config.timeout_sec = 0;
         }
 }
