@@ -53,4 +53,4 @@ efi_arch_alt = ''
 efi_cpu_family_alt = ''
 elf2efi_py = find_program('tools/elf2efi.py')
 boot_stubs = []
-subdir('efi')
+subdir('src')
