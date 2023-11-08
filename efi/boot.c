@@ -420,7 +420,7 @@ static char16_t *update_timeout_efivar(uint32_t *t, bool inc) {
         }
 }
 
-#if 0
+#if 1
 static bool unicode_supported(void) {
         static int cache = -1;
 
@@ -633,7 +633,7 @@ static EFI_STATUS reboot_system(void) {
         assert_not_reached();
 }
 
-#if 0
+#if 1
 static bool menu_run(
                 Config *config,
                 ConfigEntry **chosen_entry,
@@ -2669,6 +2669,7 @@ static EFI_STATUS run(EFI_HANDLE image) {
         _cleanup_free_ char16_t *loaded_image_path = NULL;
         EFI_STATUS err;
         uint64_t init_usec;
+        bool menu = false;
 
         init_usec = time_usec();
 
@@ -2700,6 +2701,12 @@ static EFI_STATUS run(EFI_HANDLE image) {
                 ConfigEntry *entry;
 
                 entry = config.entries[0];
+
+#if 0
+                efivar_set_time_usec(MAKE_GUID_PTR(LOADER), u"LoaderTimeMenuUSec", 0);
+                if (!menu_run(&config, &entry, loaded_image_path))
+                    return EFI_SUCCESS;
+#endif
 
                 /* if auto enrollment is activated, we try to load keys for the given entry. */
                 if (entry->type == LOADER_SECURE_BOOT_KEYS && config.secure_boot_enroll != ENROLL_OFF) {
