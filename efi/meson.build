@@ -1,12 +1,10 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 
 efi_config_h_dir = meson.current_build_dir()
-efi_addon = ''
 
 libefitest = static_library(
         'efitest',
         files(
-                'bcd.c',
                 'efi-string.c',
         ),
         build_by_default : false,
@@ -232,28 +230,8 @@ systemd_boot_sources = files(
         'boot.c',
 )
 
-stub_sources = files(
-        'cpio.c',
-        'linux.c',
-        'splash.c',
-        'stub.c',
-)
-
-addon_sources = files(
-        'addon.c',
-)
-
 if get_option('b_sanitize') == 'undefined'
         libefi_sources += files('ubsan.c')
-endif
-
-if host_machine.cpu_family() in ['x86', 'x86_64']
-        stub_sources += files('linux_x86.c')
-endif
-
-# BCD parser only makes sense on arches that Windows supports.
-if host_machine.cpu_family() in ['aarch64', 'arm', 'x86_64', 'x86']
-        systemd_boot_sources += files('bcd.c')
 endif
 
 boot_targets = []
@@ -312,19 +290,6 @@ foreach archspec : efi_archspecs
                 link_with : libefi,
                 name_suffix : 'elf',
                 kwargs : kwargs)
-
-        efi_elf_binaries += executable(
-                'linux' + archspec['arch'],
-                sources : [stub_sources],
-                link_with : libefi,
-                name_suffix : 'elf.stub',
-                kwargs : kwargs)
-
-        efi_elf_binaries += executable(
-                'addon' + archspec['arch'],
-                sources : [addon_sources],
-                name_suffix : 'elf.stub',
-                kwargs : kwargs)
 endforeach
 
 foreach efi_elf_binary : efi_elf_binaries
@@ -351,14 +316,6 @@ foreach efi_elf_binary : efi_elf_binaries
                         '@OUTPUT@',
                 ])
         boot_targets += exe
-        if name.startswith('linux')
-                boot_stubs += exe
-        endif
-
-        # This is supposed to match exactly one time
-        if name == 'addon@0@.efi.stub'.format(efi_arch)
-                efi_addon = exe.full_path()
-        endif
 endforeach
 
 alias_target('systemd-boot', boot_targets)

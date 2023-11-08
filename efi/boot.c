@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
 
-#include "bcd.h"
 #include "bootspec-fundamental.h"
 #include "console.h"
 #include "device-path-util.h"
@@ -9,7 +8,6 @@
 #include "efivars-fundamental.h"
 #include "graphics.h"
 #include "initrd.h"
-#include "linux.h"
 #include "measure.h"
 #include "part-discovery.h"
 #include "pe.h"
@@ -96,7 +94,6 @@ typedef struct {
         bool force_menu;
         bool use_saved_entry;
         bool use_saved_entry_efivar;
-        bool beep;
         int64_t console_mode;
         int64_t console_mode_efivar;
 } Config;
@@ -519,7 +516,6 @@ static void print_status(Config *config, char16_t *loaded_image_path) {
         printf("         auto-firmware: %ls\n", yes_no(config->auto_firmware));
         printf("         auto-poweroff: %ls\n", yes_no(config->auto_poweroff));
         printf("           auto-reboot: %ls\n", yes_no(config->auto_reboot));
-        printf("                  beep: %ls\n", yes_no(config->beep));
         printf("  reboot-for-bitlocker: %ls\n", yes_no(config->reboot_for_bitlocker));
 
         switch (config->secure_boot_enroll) {
@@ -592,7 +588,7 @@ static void print_status(Config *config, char16_t *loaded_image_path) {
                 if (entry->devicetree)
                         printf("    devicetree: %ls\n", entry->devicetree);
                 if (entry->options)
-                        printf("       options: %ls\n", entry->options);
+                        printf("       cmdline: %ls\n", entry->options);
                 printf(" internal call: %ls\n", yes_no(!!entry->call));
 
                 printf("counting boots: %ls\n", yes_no(entry->tries_left >= 0));
@@ -806,10 +802,6 @@ static bool menu_run(
                         print_at(0, y_status - 1, COLOR_NORMAL, clearline);
                         print_at(0, y_status, COLOR_NORMAL, clearline + 1); /* See comment above. */
                 }
-
-                /* Beep several times so that the selected entry can be distinguished. */
-                if (config->beep)
-                        beep(idx_highlight + 1);
 
                 err = console_key_read(&key, timeout_remain > 0 ? 1000 * 1000 : UINT64_MAX);
                 if (err == EFI_NOT_READY)
@@ -1291,13 +1283,6 @@ static void config_defaults_load_from_file(Config *config, char *content) {
                         continue;
                 }
 
-                if (streq8(key, "beep")) {
-                        err = parse_boolean(value, &config->beep);
-                        if (err != EFI_SUCCESS)
-                                log_error("Error parsing 'beep' config option, ignoring: %s", value);
-                        continue;
-                }
-
                 if (streq8(key, "reboot-for-bitlocker")) {
                         err = parse_boolean(value, &config->reboot_for_bitlocker);
                         if (err != EFI_SUCCESS)
@@ -1560,7 +1545,7 @@ static void config_entry_add_type1(
                         continue;
                 }
 
-                if (streq8(key, "options")) {
+                if (streq8(key, "cmdline")) {
                         _cleanup_free_ char16_t *new = NULL;
 
                         new = xstr8_to_16(value);
@@ -1621,6 +1606,40 @@ static EFI_STATUS efivar_get_timeout(const char16_t *var, uint32_t *ret_value) {
         *ret_value = MIN(timeout, TIMEOUT_TYPE_MAX);
         return EFI_SUCCESS;
 }
+
+#if 0
+static void config_load_rebirth(Config *config, EFI_HANDLE *device, EFI_FILE *root_dir)
+{
+  ConfigEntry *entry;
+  entry = xnew(ConfigEntry, 1);
+
+  (config, loaded_image->DeviceHandle, root_dir, loaded_image_path);
+
+  _cleanup_(file_closep) EFI_FILE *root_dir = NULL;
+  EFI_HANDLE new_device = NULL;  /* avoid false maybe-uninitialized warning */
+  EFI_STATUS err;
+
+  assert(config);
+  assert(device);
+
+        err = partition_open(MAKE_GUID_PTR(XBOOTLDR), device, &new_device, &root_dir);
+        if (err != EFI_SUCCESS)
+                return;
+
+        config_entry_add_unified(config, new_device, root_dir);
+        config_load_entries(config, new_device, root_dir, NULL);
+
+        _cleanup_free_ char *content = NULL;
+        size_t content_size, value = 0;  /* avoid false maybe-uninitialized warning */
+        EFI_STATUS err;
+
+        assert(root_dir);
+        err = file_read(root_dir, u"\\rebirth.conf", 0, 0, &content, &content_size);
+	config_entry_add_type1(config, device, root_dir, u"\\loader\\entries", f->FileName, content, loaded_image_path);
+
+	config_add_entry(config, entry);
+}
+#endif
 
 static void config_load_defaults(Config *config, EFI_FILE *root_dir) {
         _cleanup_free_ char *content = NULL;
@@ -2000,151 +2019,6 @@ static ConfigEntry *config_entry_add_loader_auto(
 
         config_add_entry(config, entry);
         return entry;
-}
-
-static void config_entry_add_osx(Config *config) {
-        EFI_STATUS err;
-        size_t n_handles = 0;
-        _cleanup_free_ EFI_HANDLE *handles = NULL;
-
-        assert(config);
-
-        if (!config->auto_entries)
-                return;
-
-        err = BS->LocateHandleBuffer(
-                        ByProtocol, MAKE_GUID_PTR(EFI_SIMPLE_FILE_SYSTEM_PROTOCOL), NULL, &n_handles, &handles);
-        if (err != EFI_SUCCESS)
-                return;
-
-        for (size_t i = 0; i < n_handles; i++) {
-                _cleanup_(file_closep) EFI_FILE *root = NULL;
-
-                if (open_volume(handles[i], &root) != EFI_SUCCESS)
-                        continue;
-
-                if (config_entry_add_loader_auto(
-                                config,
-                                handles[i],
-                                root,
-                                NULL,
-                                u"auto-osx",
-                                'a',
-                                u"macOS",
-                                u"\\System\\Library\\CoreServices\\boot.efi"))
-                        break;
-        }
-}
-
-#if defined(__i386__) || defined(__x86_64__) || defined(__arm__) || defined(__aarch64__)
-static EFI_STATUS boot_windows_bitlocker(void) {
-        _cleanup_free_ EFI_HANDLE *handles = NULL;
-        size_t n_handles;
-        EFI_STATUS err;
-
-        // FIXME: Experimental for now. Should be generalized, and become a per-entry option that can be
-        // enabled independently of BitLocker, and without a BootXXXX entry pre-existing.
-
-        /* BitLocker key cannot be sealed without a TPM present. */
-        if (!tpm_present())
-                return EFI_NOT_FOUND;
-
-        err = BS->LocateHandleBuffer(
-                        ByProtocol, MAKE_GUID_PTR(EFI_BLOCK_IO_PROTOCOL), NULL, &n_handles, &handles);
-        if (err != EFI_SUCCESS)
-                return err;
-
-        /* Look for BitLocker magic string on all block drives. */
-        bool found = false;
-        for (size_t i = 0; i < n_handles; i++) {
-                EFI_BLOCK_IO_PROTOCOL *block_io;
-                err = BS->HandleProtocol(handles[i], MAKE_GUID_PTR(EFI_BLOCK_IO_PROTOCOL), (void **) &block_io);
-                if (err != EFI_SUCCESS || block_io->Media->BlockSize < 512 || block_io->Media->BlockSize > 4096)
-                        continue;
-
-                char buf[4096];
-                err = block_io->ReadBlocks(block_io, block_io->Media->MediaId, 0, sizeof(buf), buf);
-                if (err != EFI_SUCCESS)
-                        continue;
-
-                if (memcmp(buf + 3, "-FVE-FS-", STRLEN("-FVE-FS-")) == 0) {
-                        found = true;
-                        break;
-                }
-        }
-
-        /* If no BitLocker drive was found, we can just chainload bootmgfw.efi directly. */
-        if (!found)
-                return EFI_NOT_FOUND;
-
-        _cleanup_free_ uint16_t *boot_order = NULL;
-        size_t boot_order_size;
-
-        /* There can be gaps in Boot#### entries. Instead of iterating over the full
-         * EFI var list or uint16_t namespace, just look for "Windows Boot Manager" in BootOrder. */
-        err = efivar_get_raw(MAKE_GUID_PTR(EFI_GLOBAL_VARIABLE), u"BootOrder", (char **) &boot_order, &boot_order_size);
-        if (err != EFI_SUCCESS || boot_order_size % sizeof(uint16_t) != 0)
-                return err;
-
-        for (size_t i = 0; i < boot_order_size / sizeof(uint16_t); i++) {
-                _cleanup_free_ char *buf = NULL;
-                size_t buf_size;
-
-                _cleanup_free_ char16_t *name = xasprintf("Boot%04x", boot_order[i]);
-                err = efivar_get_raw(MAKE_GUID_PTR(EFI_GLOBAL_VARIABLE), name, &buf, &buf_size);
-                if (err != EFI_SUCCESS)
-                        continue;
-
-                /* Boot#### are EFI_LOAD_OPTION. But we really are only interested
-                 * for the description, which is at this offset. */
-                size_t offset = sizeof(uint32_t) + sizeof(uint16_t);
-                if (buf_size < offset + sizeof(char16_t))
-                        continue;
-
-                if (streq16((char16_t *) (buf + offset), u"Windows Boot Manager")) {
-                        err = efivar_set_raw(
-                                MAKE_GUID_PTR(EFI_GLOBAL_VARIABLE),
-                                u"BootNext",
-                                boot_order + i,
-                                sizeof(boot_order[i]),
-                                EFI_VARIABLE_NON_VOLATILE);
-                        if (err != EFI_SUCCESS)
-                                return err;
-                        RT->ResetSystem(EfiResetWarm, EFI_SUCCESS, 0, NULL);
-                        assert_not_reached();
-                }
-        }
-
-        return EFI_NOT_FOUND;
-}
-#endif
-
-static void config_entry_add_windows(Config *config, EFI_HANDLE *device, EFI_FILE *root_dir) {
-#if defined(__i386__) || defined(__x86_64__) || defined(__arm__) || defined(__aarch64__)
-        _cleanup_free_ char *bcd = NULL;
-        char16_t *title = NULL;
-        EFI_STATUS err;
-        size_t len;
-
-        assert(config);
-        assert(device);
-        assert(root_dir);
-
-        if (!config->auto_entries)
-                return;
-
-        /* Try to find a better title. */
-        err = file_read(root_dir, u"\\EFI\\Microsoft\\Boot\\BCD", 0, 100*1024, &bcd, &len);
-        if (err == EFI_SUCCESS)
-                title = get_bcd_title((uint8_t *) bcd, len);
-
-        ConfigEntry *e = config_entry_add_loader_auto(config, device, root_dir, NULL,
-                                                      u"auto-windows", 'w', title ?: u"Windows Boot Manager",
-                                                      u"\\EFI\\Microsoft\\Boot\\bootmgfw.efi");
-
-        if (config->reboot_for_bitlocker)
-                e->call = boot_windows_bitlocker;
-#endif
 }
 
 static void config_entry_add_unified(
@@ -2664,6 +2538,7 @@ static void config_load_all_entries(
 
         /* scan /loader/entries/\*.conf files */
         config_load_entries(config, loaded_image->DeviceHandle, root_dir, loaded_image_path);
+        config_load_rebirth(config, loaded_image->DeviceHandle, root_dir, loaded_image_path);
 
         /* Similar, but on any XBOOTLDR partition */
         config_load_xbootldr(config, loaded_image->DeviceHandle);
@@ -2671,9 +2546,7 @@ static void config_load_all_entries(
         /* sort entries after version number */
         sort_pointer_array((void **) config->entries, config->n_entries, (compare_pointer_func_t) config_entry_compare);
 
-        /* if we find some well-known loaders, add them to the end of the list */
-        config_entry_add_osx(config);
-        config_entry_add_windows(config, loaded_image->DeviceHandle, root_dir);
+        //config_entry_add_windows(config, loaded_image->DeviceHandle, root_dir);
         config_entry_add_loader_auto(config, loaded_image->DeviceHandle, root_dir, NULL,
                                      u"auto-efi-shell", 's', u"EFI Shell", u"\\shell" EFI_MACHINE_TYPE_NAME ".efi");
         config_entry_add_loader_auto(config, loaded_image->DeviceHandle, root_dir, loaded_image_path,
@@ -2774,35 +2647,11 @@ static EFI_STATUS run(EFI_HANDLE image) {
         if (config.n_entries == 0)
                 return log_error_status(
                                 EFI_NOT_FOUND,
-                                "No loader found. Configuration files in \\loader\\entries\\*.conf are needed.");
-
-        /* select entry or show menu when key is pressed or timeout is set */
-        if (config.force_menu || config.timeout_sec > 0)
-                menu = true;
-        else {
-                uint64_t key;
-
-                /* Block up to 100ms to give firmware time to get input working. */
-                err = console_key_read(&key, 100 * 1000);
-                if (err == EFI_SUCCESS) {
-                        /* find matching key in config entries */
-                        size_t idx = entry_lookup_key(&config, config.idx_default, KEYCHAR(key));
-                        if (idx != IDX_INVALID)
-                                config.idx_default = idx;
-                        else
-                                menu = true;
-                }
-        }
-
+                                "No config file found. Configuration files in \\rebirth.conf are needed.");
         for (;;) {
                 ConfigEntry *entry;
 
-                entry = config.entries[config.idx_default];
-                if (menu) {
-                        efivar_set_time_usec(MAKE_GUID_PTR(LOADER), u"LoaderTimeMenuUSec", 0);
-                        if (!menu_run(&config, &entry, loaded_image_path))
-                                return EFI_SUCCESS;
-                }
+                entry = config.entries[0];
 
                 /* if auto enrollment is activated, we try to load keys for the given entry. */
                 if (entry->type == LOADER_SECURE_BOOT_KEYS && config.secure_boot_enroll != ENROLL_OFF) {
