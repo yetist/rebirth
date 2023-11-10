@@ -163,10 +163,14 @@ libefi_sources = files(
         'ticks.c',
         'util.c',
         'vmm.c',
-        'sha256.c', 'string-util-fundamental.c', 'efivars-fundamental.c', 'uki.c', 'bootspec-fundamental.c',
+        'sha256.c',
+        'string-util-fundamental.c',
+        'efivars-fundamental.c',
+        'uki.c',
+        'bootspec-fundamental.c',
 )
 
-systemd_boot_sources = files(
+rebirth_boot_sources = files(
         'boot.c',
 )
 
@@ -226,7 +230,7 @@ foreach archspec : efi_archspecs
 
         efi_elf_binaries += executable(
                 'rebirth' + archspec['arch'],
-                sources : [systemd_boot_sources],
+                sources : [rebirth_boot_sources],
                 link_with : libefi,
                 name_suffix : 'elf',
                 kwargs : kwargs)
