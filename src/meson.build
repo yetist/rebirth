@@ -24,7 +24,6 @@ efi_fuzz_template = efitest_base
 efi_conf = configuration_data()
 efi_conf.set10('ENABLE_TPM', true)
 efi_conf.set10('EFI_DEBUG', get_option('debug'))
-efi_conf.set10('EFI_MENU', get_option('menu'))
 
 foreach ctype : ['color-normal', 'color-entry', 'color-highlight', 'color-edit']
         c = get_option('efi-' + ctype).split(',')
