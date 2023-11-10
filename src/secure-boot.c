@@ -141,7 +141,7 @@ static struct SecurityOverride {
 } security_override;
 
 static EFIAPI EFI_STATUS security_hook(
-                const EFI_SECURITY_ARCH_PROTOCOL *this,
+                const EFI_SECURITY_ARCH_PROTOCOL _unused_ *this,
                 uint32_t authentication_status,
                 const EFI_DEVICE_PATH *file) {
 
@@ -156,7 +156,7 @@ static EFIAPI EFI_STATUS security_hook(
 }
 
 static EFIAPI EFI_STATUS security2_hook(
-                const EFI_SECURITY2_ARCH_PROTOCOL *this,
+                const EFI_SECURITY2_ARCH_PROTOCOL _unused_ *this,
                 const EFI_DEVICE_PATH *device_path,
                 void *file_buffer,
                 size_t file_size,
