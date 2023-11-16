@@ -855,6 +855,69 @@ static EFI_STATUS discover_root_dir(EFI_LOADED_IMAGE_PROTOCOL *loaded_image, EFI
                 return open_volume(loaded_image->DeviceHandle, ret_dir);
 }
 
+static EFI_STATUS search_filesystem (EFI_HANDLE *ret_rebirth_dev, EFI_FILE **ret_rebirth_dir)
+{
+    _cleanup_free_ EFI_HANDLE *handles = NULL;
+    size_t n_handles = 0;
+    EFI_STATUS err;
+
+    assert(ret_rebirth_dev);
+    assert(ret_rebirth_dir);
+
+    (void) reconnect_all_drivers();
+    err = BS->LocateHandleBuffer (
+            ByProtocol,
+            MAKE_GUID_PTR(EFI_SIMPLE_FILE_SYSTEM_PROTOCOL),
+            NULL,
+            &n_handles,
+            &handles
+            );
+    if (err != EFI_SUCCESS) {
+        log_error("Failed to get list of handles: %m");
+        return err;
+    }
+
+    for (size_t i = 0; i < n_handles; i++) {
+        _cleanup_(file_closep) EFI_FILE *root_dir = NULL, *efi_dir = NULL;
+        EFI_DEVICE_PATH *fs;
+
+        err = BS->HandleProtocol(
+                handles[i], MAKE_GUID_PTR(EFI_DEVICE_PATH_PROTOCOL), (void **) &fs);
+        if (err != EFI_SUCCESS)
+            return err;
+
+#ifdef EFI_DEBUG
+        _cleanup_free_ char16_t *file_path_str = NULL;
+        _cleanup_free_ char16_t *uuid = NULL;
+        if (device_path_to_str(fs, &file_path_str) != EFI_SUCCESS)
+            continue;
+        convert_efi_path(file_path_str);
+        log_error("Device: %ls", file_path_str);
+        uuid = disk_get_part_uuid(handles[i]);
+        log_error("uuid: %ls", uuid);
+#endif
+
+        err = open_volume(handles[i], &root_dir);
+        if (err != EFI_SUCCESS)
+            continue;
+
+        /* simple Rebirth check */
+        err = root_dir->Open(root_dir, &efi_dir, (char16_t*) u"\\rebirth.conf",
+                EFI_FILE_MODE_READ,
+                EFI_FILE_READ_ONLY);
+        if (err != EFI_SUCCESS)
+            continue;
+
+        *ret_rebirth_dev = handles[i];
+        *ret_rebirth_dir = TAKE_PTR(root_dir);
+        return EFI_SUCCESS;
+    }
+
+    if (err != EFI_SUCCESS)
+        return EFI_NOT_FOUND;
+    return EFI_SUCCESS;
+}
+
 static EFI_STATUS run(EFI_HANDLE image) {
         EFI_LOADED_IMAGE_PROTOCOL *loaded_image;
         _cleanup_(file_closep) EFI_FILE *root_dir = NULL;
@@ -874,20 +937,24 @@ static EFI_STATUS run(EFI_HANDLE image) {
 
         export_variables(loaded_image, init_usec);
 
-        err = discover_root_dir(loaded_image, &root_dir);
-        if (err != EFI_SUCCESS)
-                return log_error_status(err, "Unable to open root directory: %m");
+        err = search_filesystem(loaded_image, &root_dir);
+        if (err != EFI_SUCCESS) {
+            log_error("Unable to find the rebirth partition.");
+            log_error("=> Restarting the system...");
+            log_wait();
+            reboot_system();
+        }
 
         (void) load_drivers(image, loaded_image, root_dir);
 
         config_load_all_entries(&config, loaded_image, root_dir);
 
         if (config.n_entries == 0) {
-	    log_error("The \\rebirth.conf configuration file was not found or is invalid.");
-	    log_error("=> Restarting the system...");
-	    log_wait();
-	    reboot_system();
-	}
+            log_error("The \\rebirth.conf configuration file was not found or is invalid.");
+            log_error("=> Restarting the system...");
+            log_wait();
+            reboot_system();
+        }
 
         for (;;) {
                 ConfigEntry *entry;
