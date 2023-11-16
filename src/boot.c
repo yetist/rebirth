@@ -819,14 +819,14 @@ static void export_variables(
 
 static void config_load_all_entries(
                 Config *config,
-                EFI_LOADED_IMAGE_PROTOCOL *loaded_image,
+                EFI_HANDLE *ret_rebirth_dev,
                 EFI_FILE *root_dir) {
 
         assert(config);
-        assert(loaded_image);
+        assert(ret_rebirth_dev);
         assert(root_dir);
 
-        config_load_rebirth(config, loaded_image->DeviceHandle, root_dir);
+        config_load_rebirth(config, ret_rebirth_dev, root_dir);
 
         /* find if secure boot signing keys exist and autoload them if necessary
         otherwise creates menu entries so that the user can load them manually
@@ -937,10 +937,8 @@ static EFI_STATUS run(EFI_HANDLE image) {
             log_wait();
             reboot_system();
         }
-        export_variables(ret_rebirth_dev, init_usec);
 
-        config_load_all_entries(&config, ret_rebirth_dev, root_dir);
-
+        config_load_all_entries(&config, &ret_rebirth_dev, root_dir);
         if (config.n_entries == 0) {
             log_error("The \\rebirth.conf configuration file was not found or is invalid.");
             log_error("=> Restarting the system...");
@@ -948,30 +946,31 @@ static EFI_STATUS run(EFI_HANDLE image) {
             reboot_system();
         }
 
-	ConfigEntry *entry;
+        export_variables(ret_rebirth_dev, init_usec);
+        ConfigEntry *entry;
 
-	entry = config.entries[0];
-	entry->device = ret_rebirth_dev;
+        entry = config.entries[0];
+        entry->device = ret_rebirth_dev;
 
-	/* if auto enrollment is activated, we try to load keys for the given entry. */
-	if (entry->type == LOADER_SECURE_BOOT_KEYS && config.secure_boot_enroll != ENROLL_OFF) {
-	    err = secure_boot_enroll_at(root_dir, entry->path, /*force=*/ true);
-	    if (err != EFI_SUCCESS)
-	      return err;
-	}
+        /* if auto enrollment is activated, we try to load keys for the given entry. */
+        if (entry->type == LOADER_SECURE_BOOT_KEYS && config.secure_boot_enroll != ENROLL_OFF) {
+            err = secure_boot_enroll_at(root_dir, entry->path, /*force=*/ true);
+            if (err != EFI_SUCCESS)
+                return err;
+        }
 
-	(void) config_entry_bump_counters(entry);
-	save_selected_entry(&config, entry);
+        (void) config_entry_bump_counters(entry);
+        save_selected_entry(&config, entry);
 
-	/* Optionally, read a random seed off the ESP and pass it to the OS */
-	(void) process_random_seed(root_dir);
+        /* Optionally, read a random seed off the ESP and pass it to the OS */
+        (void) process_random_seed(root_dir);
 
-	err = image_start(image, entry);
-	if (err != EFI_SUCCESS)
-	  return err;
+        err = image_start(image, entry);
+        if (err != EFI_SUCCESS)
+            return err;
 
-	config.timeout_sec = 0;
-	return EFI_SUCCESS;
+        config.timeout_sec = 0;
+        return EFI_SUCCESS;
 }
 
 DEFINE_EFI_MAIN_FUNCTION(run, "rebirth", /*wait_for_debugger=*/false);
