@@ -286,7 +286,6 @@ static EFI_STATUS config_entry_bump_counters(ConfigEntry *entry) {
         return EFI_SUCCESS;
 }
 
-#if 1
 static void config_load_rebirth(Config *config, EFI_HANDLE *device, EFI_FILE *root_dir)
 {
   ConfigEntry *entry;
@@ -367,7 +366,6 @@ static void config_load_rebirth(Config *config, EFI_HANDLE *device, EFI_FILE *ro
   entry->device = device;
   config_add_entry(config, entry);
 }
-#endif
 
 static size_t config_entry_find(Config *config, const char16_t *pattern) {
         assert(config);
@@ -848,14 +846,7 @@ static void config_load_all_entries(
         config_default_entry_select(config);
 }
 
-static EFI_STATUS discover_root_dir(EFI_LOADED_IMAGE_PROTOCOL *loaded_image, EFI_FILE **ret_dir) {
-        if (is_direct_boot(loaded_image->DeviceHandle))
-                return vmm_open(&loaded_image->DeviceHandle, ret_dir);
-        else
-                return open_volume(loaded_image->DeviceHandle, ret_dir);
-}
-
-static EFI_STATUS search_filesystem (EFI_HANDLE *ret_rebirth_dev, EFI_FILE **ret_rebirth_dir)
+static EFI_STATUS search_rebirth_filesystem (EFI_HANDLE *ret_rebirth_dev, EFI_FILE **ret_rebirth_dir)
 {
     _cleanup_free_ EFI_HANDLE *handles = NULL;
     size_t n_handles = 0;
@@ -894,7 +885,10 @@ static EFI_STATUS search_filesystem (EFI_HANDLE *ret_rebirth_dev, EFI_FILE **ret
         convert_efi_path(file_path_str);
         log_error("Device: %ls", file_path_str);
         uuid = disk_get_part_uuid(handles[i]);
-        log_error("uuid: %ls", uuid);
+        if (uuid) {
+                efivar_set(MAKE_GUID_PTR(LOADER), u"LoaderDevicePartUUID", uuid, 0);
+		log_error("uuid: %ls", uuid);
+	}
 #endif
 
         err = open_volume(handles[i], &root_dir);
@@ -924,6 +918,7 @@ static EFI_STATUS run(EFI_HANDLE image) {
         _cleanup_(config_free) Config config = {};
         EFI_STATUS err;
         uint64_t init_usec;
+        EFI_HANDLE ret_rebirth_dev;
 
         init_usec = time_usec();
 
@@ -935,19 +930,16 @@ static EFI_STATUS run(EFI_HANDLE image) {
         if (err != EFI_SUCCESS)
                 return log_error_status(err, "Error getting a LoadedImageProtocol handle: %m");
 
-        export_variables(loaded_image, init_usec);
-
-        err = search_filesystem(loaded_image, &root_dir);
+        err = search_rebirth_filesystem(&ret_rebirth_dev, &root_dir);
         if (err != EFI_SUCCESS) {
             log_error("Unable to find the rebirth partition.");
             log_error("=> Restarting the system...");
             log_wait();
             reboot_system();
         }
+        export_variables(ret_rebirth_dev, init_usec);
 
-        (void) load_drivers(image, loaded_image, root_dir);
-
-        config_load_all_entries(&config, loaded_image, root_dir);
+        config_load_all_entries(&config, ret_rebirth_dev, root_dir);
 
         if (config.n_entries == 0) {
             log_error("The \\rebirth.conf configuration file was not found or is invalid.");
@@ -956,31 +948,30 @@ static EFI_STATUS run(EFI_HANDLE image) {
             reboot_system();
         }
 
-        for (;;) {
-                ConfigEntry *entry;
+	ConfigEntry *entry;
 
-                entry = config.entries[0];
+	entry = config.entries[0];
+	entry->device = ret_rebirth_dev;
 
-                /* if auto enrollment is activated, we try to load keys for the given entry. */
-                if (entry->type == LOADER_SECURE_BOOT_KEYS && config.secure_boot_enroll != ENROLL_OFF) {
-                        err = secure_boot_enroll_at(root_dir, entry->path, /*force=*/ true);
-                        if (err != EFI_SUCCESS)
-                                return err;
-                        continue;
-                }
+	/* if auto enrollment is activated, we try to load keys for the given entry. */
+	if (entry->type == LOADER_SECURE_BOOT_KEYS && config.secure_boot_enroll != ENROLL_OFF) {
+	    err = secure_boot_enroll_at(root_dir, entry->path, /*force=*/ true);
+	    if (err != EFI_SUCCESS)
+	      return err;
+	}
 
-                (void) config_entry_bump_counters(entry);
-                save_selected_entry(&config, entry);
+	(void) config_entry_bump_counters(entry);
+	save_selected_entry(&config, entry);
 
-                /* Optionally, read a random seed off the ESP and pass it to the OS */
-                (void) process_random_seed(root_dir);
+	/* Optionally, read a random seed off the ESP and pass it to the OS */
+	(void) process_random_seed(root_dir);
 
-                err = image_start(image, entry);
-                if (err != EFI_SUCCESS)
-                        return err;
+	err = image_start(image, entry);
+	if (err != EFI_SUCCESS)
+	  return err;
 
-                config.timeout_sec = 0;
-        }
+	config.timeout_sec = 0;
+	return EFI_SUCCESS;
 }
 
 DEFINE_EFI_MAIN_FUNCTION(run, "rebirth", /*wait_for_debugger=*/false);
