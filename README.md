@@ -19,3 +19,12 @@ cmdline root=/dev/sda ...
 meson setup _build
 ninja -C _build rebirth
 ```
+
+## How to embed into edk2 fd
+
+write the follow in fdf:
+```
+FILE APPLICATION = 65B4495A-F0CE-4D8C-BB90-D3239276FD4B {
+    SECTION PE32 = Platform/Loongson/LoongArchQemuPkg/rebirthloongarch64.efi
+}
+```

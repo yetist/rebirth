@@ -230,7 +230,7 @@ IGNORE_SECTION_TYPES = [
 
 # EFI mandates 4KiB memory pages.
 SECTION_ALIGNMENT = 4096
-FILE_ALIGNMENT = 512
+FILE_ALIGNMENT = 4096
 
 # Nobody cares about DOS headers, so put the PE header right after.
 PE_OFFSET = 64
