@@ -15,15 +15,16 @@ fs0:\rebirthloongarch64.efi
 endif
 EOF
 
-cat > ${EFI_DIR}/rebirth.conf << EOF
-title test
-linux   /vmlinuz
-initrd  /initrd.img
-cmdline root=/dev/mem loglevel=7 console=ttyS0,115200
-EOF
-
-cp /boot/vmlinuz-linux ${EFI_DIR}/vmlinuz
-cp /boot/initramfs-linux.img ${EFI_DIR}/initrd.img
+#cat > ${EFI_DIR}/rebirth.conf << EOF
+#title test
+#linux   /vmlinuz
+#initrd  /initrd.img
+#cmdline root=/dev/mem loglevel=7 console=ttyS0,115200
+#EOF
+#
+#cp /boot/vmlinuz-linux ${EFI_DIR}/vmlinuz
+#cp /boot/initramfs-linux.img ${EFI_DIR}/initrd.img
+cp vmlinuz.unsigned.efi ${EFI_DIR}/rebirthloong64.efi
 
 qemu-system-loongarch64 \
     -m 4G \

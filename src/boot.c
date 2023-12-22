@@ -896,7 +896,7 @@ static EFI_STATUS search_rebirth_filesystem (EFI_HANDLE *ret_rebirth_dev, EFI_FI
             continue;
 
         /* simple Rebirth check */
-        err = root_dir->Open(root_dir, &efi_dir, (char16_t*) u"\\rebirth.conf",
+        err = root_dir->Open(root_dir, &efi_dir, (char16_t*) u"\\rebirthloong64.efi",
                 EFI_FILE_MODE_READ,
                 EFI_FILE_READ_ONLY);
         if (err != EFI_SUCCESS)
@@ -938,38 +938,35 @@ static EFI_STATUS run(EFI_HANDLE image) {
             reboot_system();
         }
 
-        config_load_all_entries(&config, &ret_rebirth_dev, root_dir);
-        if (config.n_entries == 0) {
-            log_error("The \\rebirth.conf configuration file was not found or is invalid.");
-            log_error("=> Restarting the system...");
-            log_wait();
-            reboot_system();
-        }
+        //config_load_all_entries(&config, &ret_rebirth_dev, root_dir);
+        //if (config.n_entries == 0) {
+        //    log_error("The \\rebirth.efi configuration file was not found or is invalid.");
+        //    log_error("=> Restarting the system...");
+        //    log_wait();
+        //    reboot_system();
+        //}
 
-        export_variables(ret_rebirth_dev, init_usec);
+        //export_variables(ret_rebirth_dev, init_usec);
         ConfigEntry *entry;
 
-        entry = config.entries[0];
-        entry->device = ret_rebirth_dev;
+	entry = xnew(ConfigEntry, 1);
+	*entry = (ConfigEntry) {
+	    .id = xstrdup16(u"rebirth"),
+	      .tries_done = -1,
+	      .tries_left = -1,
+	};
 
-        /* if auto enrollment is activated, we try to load keys for the given entry. */
-        if (entry->type == LOADER_SECURE_BOOT_KEYS && config.secure_boot_enroll != ENROLL_OFF) {
-            err = secure_boot_enroll_at(root_dir, entry->path, /*force=*/ true);
-            if (err != EFI_SUCCESS)
-                return err;
-        }
-
-        (void) config_entry_bump_counters(entry);
-        save_selected_entry(&config, entry);
-
-        /* Optionally, read a random seed off the ESP and pass it to the OS */
-        (void) process_random_seed(root_dir);
+	entry->title = xstr8_to_16(u"Loongson Rebirth");
+	//free(entry->loader);
+	entry->type = LOADER_LINUX;
+	entry->loader = xstr8_to_path(u"\\rebirthloong64.efi");
+	entry->key = 'l';
+	entry->device = ret_rebirth_dev;
 
         err = image_start(image, entry);
         if (err != EFI_SUCCESS)
             return err;
 
-        config.timeout_sec = 0;
         return EFI_SUCCESS;
 }
 
