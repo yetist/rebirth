@@ -22,8 +22,8 @@ initrd  /initrd.img
 cmdline root=/dev/mem loglevel=7 console=ttyS0,115200
 EOF
 
-cp /boot/vmlinuz-linux ${EFI_DIR}/vmlinuz
-cp /boot/initramfs-linux.img ${EFI_DIR}/initrd.img
+sudo cp /boot/vmlinuz-linux ${EFI_DIR}/vmlinuz
+sudo cp /boot/initramfs-linux.img ${EFI_DIR}/initrd.img
 
 qemu-system-loongarch64 \
     -m 4G \
