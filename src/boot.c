@@ -883,7 +883,6 @@ static EFI_STATUS search_rebirth_filesystem (EFI_HANDLE *ret_rebirth_dev, EFI_FI
         if (device_path_to_str(fs, &file_path_str) != EFI_SUCCESS)
             continue;
         convert_efi_path(file_path_str);
-        log_error("Device: %ls", file_path_str);
         uuid = disk_get_part_uuid(handles[i]);
         if (uuid) {
                 efivar_set(MAKE_GUID_PTR(LOADER), u"LoaderDevicePartUUID", uuid, 0);
