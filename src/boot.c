@@ -610,14 +610,14 @@ static EFI_STATUS image_start(
 
         err = shim_load_image(parent_image, path, &image);
         if (err != EFI_SUCCESS)
-                return log_error_status(err, "Error loading %ls: %m", entry->loader);
+                return log_error_status(err, "Error shim loading %ls: %m", entry->loader);
 
         /* DTBs are loaded by the kernel before ExitBootServices, and they can be used to map and assign
          * arbitrary memory ranges, so skip it when secure boot is enabled as the DTB here is unverified. */
         if (entry->devicetree && !secure_boot_enabled()) {
                 err = devicetree_install(&dtstate, image_root, entry->devicetree);
                 if (err != EFI_SUCCESS)
-                        return log_error_status(err, "Error loading %ls: %m", entry->devicetree);
+                        return log_error_status(err, "Error efi loading %ls: %m", entry->devicetree);
         }
 
         _cleanup_(cleanup_initrd) EFI_HANDLE initrd_handle = NULL;
@@ -924,11 +924,13 @@ static EFI_STATUS run(EFI_HANDLE image) {
 
         /* Ask Shim to leave its protocol around, so that the stub can use it to validate PEs.
          * By default, Shim uninstalls its protocol when calling StartImage(). */
-        shim_retain_protocol();
+        //shim_retain_protocol();
 
-        err = BS->HandleProtocol(image, MAKE_GUID_PTR(EFI_LOADED_IMAGE_PROTOCOL), (void **) &loaded_image);
-        if (err != EFI_SUCCESS)
-                return log_error_status(err, "Error getting a LoadedImageProtocol handle: %m");
+        //err = BS->HandleProtocol(image, MAKE_GUID_PTR(EFI_LOADED_IMAGE_PROTOCOL), (void **) &loaded_image);
+        //if (err != EFI_SUCCESS)
+        //        return log_error_status(err, "Error getting a LoadedImageProtocol handle: %m");
+
+	//(void) device_path_to_str(loaded_image->FilePath, &loaded_image_path);
 
         err = search_rebirth_filesystem(&ret_rebirth_dev, &root_dir);
         if (err != EFI_SUCCESS) {
@@ -937,6 +939,8 @@ static EFI_STATUS run(EFI_HANDLE image) {
             log_wait();
             reboot_system();
         }
+
+	(void) load_drivers(image, loaded_image, root_dir);
 
         //config_load_all_entries(&config, &ret_rebirth_dev, root_dir);
         //if (config.n_entries == 0) {
@@ -958,11 +962,13 @@ static EFI_STATUS run(EFI_HANDLE image) {
 
 	entry->title = xstr8_to_16(u"Loongson Rebirth");
 	//free(entry->loader);
-	entry->type = LOADER_LINUX;
+	//entry->type = LOADER_EFI;
+	entry->type = LOADER_UNDEFINED;
 	entry->loader = xstr8_to_path(u"\\rebirthloong64.efi");
-	entry->key = 'l';
+	//entry->key = 'l';
 	entry->device = ret_rebirth_dev;
 
+        //err = BS->StartImage(image, NULL, NULL);
         err = image_start(image, entry);
         if (err != EFI_SUCCESS)
             return err;

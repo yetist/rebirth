@@ -3,6 +3,7 @@
 
 #include "efi-string.h"
 
+/*
 #if defined __has_attribute
 #  if __has_attribute(no_stack_protector)
 #    define HAVE_NO_STACK_PROTECTOR_ATTRIBUTE
@@ -18,6 +19,9 @@ __attribute__((no_stack_protector, noinline)) void __stack_chk_guard_init(void);
 #  define STACK_PROTECTOR_RANDOM 0
 #  define __stack_chk_guard_init()
 #endif
+*/
+#  define STACK_PROTECTOR_RANDOM 0
+#  define __stack_chk_guard_init()
 
 _noreturn_ void freeze(void);
 void log_wait(void);

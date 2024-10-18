@@ -25,10 +25,10 @@ void efi_assert(const char *expr, const char *file, unsigned line, const char *f
 
         /* Let's be paranoid. */
         if (asserting)
-                panic(u"systemd-boot: Nested assertion failure, halting.");
+                panic(u"rebirth: Nested assertion failure, halting.");
 
         asserting = true;
-        log_error("systemd-boot: Assertion '%s' failed at %s:%u@%s, halting.", expr, file, line, function);
+        log_error("rebirth: Assertion '%s' failed at %s:%u@%s, halting.", expr, file, line, function);
         freeze();
 }
 
@@ -88,7 +88,7 @@ void __stack_chk_guard_init(void) {
 _used_ _noreturn_ void __stack_chk_fail(void);
 _used_ _noreturn_ void __stack_chk_fail_local(void);
 void __stack_chk_fail(void) {
-        panic(u"systemd-boot: Stack check failed, halting.");
+        panic(u"rebirth: Stack check failed, halting.");
 }
 void __stack_chk_fail_local(void) {
         __stack_chk_fail();
@@ -97,7 +97,7 @@ void __stack_chk_fail_local(void) {
 /* Called by libgcc for some fatal errors like integer overflow with -ftrapv. */
 _used_ _noreturn_ void abort(void);
 void abort(void) {
-        panic(u"systemd-boot: Unknown error, halting.");
+        panic(u"rebirth: Unknown error, halting.");
 }
 
 #if defined(__ARM_EABI__)
@@ -106,10 +106,10 @@ _used_ _noreturn_ int __aeabi_idiv0(int return_value);
 _used_ _noreturn_ long long __aeabi_ldiv0(long long return_value);
 
 int __aeabi_idiv0(int return_value) {
-        panic(u"systemd-boot: Division by zero, halting.");
+        panic(u"rebirth: Division by zero, halting.");
 }
 
 long long __aeabi_ldiv0(long long return_value) {
-        panic(u"systemd-boot: Division by zero, halting.");
+        panic(u"rebirth: Division by zero, halting.");
 }
 #endif
